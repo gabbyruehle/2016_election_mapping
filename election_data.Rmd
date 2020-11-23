@@ -1,0 +1,102 @@
+---
+title: "election_data"
+author: "Gabrielle Ruehle"
+date: "10/26/2020"
+output: html_document
+---
+
+```{r}
+download.file("https://s3.amazonaws.com/dl.ncsbe.gov/ENRS/2016_11_08/results_pct_20161108.zip","results_pct_20161108.zip")
+unzip("results_pct_20161108.zip","results_pct_20161108.txt")
+
+```
+```{r}
+library(readr)
+results_pct_20161108 <- read_delim("results_pct_20161108.txt", 
+    "\t", escape_double = FALSE, col_types = cols(`Contest Group ID` = col_character(), 
+        `Election Date` = col_date(format = "%m/%d/%Y")), 
+    trim_ws = TRUE)
+View(results_pct_20161108)
+```
+
+```{r}
+library(dplyr)
+results_pct_20161108 <- results_pct_20161108 %>% select(-15)
+```
+```{r}
+library(janitor)
+
+results_pct_20161108 <- clean_names(results_pct_20161108)
+```
+```{r}
+contests <- results_pct_20161108 %>% 
+  group_by(contest_name) %>%
+  count() %>%
+  arrange(desc(n))
+contests
+```
+```{r}
+office <- results_pct_20161108 %>%
+  filter(contest_name == "US PRESIDENT")
+```
+
+```{r}
+grouped16 <- office %>%
+  group_by(county, choice, choice_party) %>%
+  summarise(votes=sum(total_votes))
+```
+
+```{r}
+library(tidyr)
+pivot16 <- grouped16 %>%
+  pivot_wider(names_from=c(choice, choice_party), 
+              values_from=votes) %>%
+  as.data.frame()
+
+pivot16 <- pivot16 %>% select(c(-7))
+
+pivot16[is.na(pivot16)] <-0
+
+pivot16 <- pivot16 %>%
+  mutate(total_votes = rowSums(.[-1]))
+
+View(pivot16)
+```
+
+```{r}
+for(i in 1:nrow(pivot16)) {
+  ranks <- rank(pivot16[i, 2:6])
+  maxrank <- as.numeric(max(ranks))
+  winners <- names(ranks[ranks==maxrank])
+  pivot16$Winner[i] <- paste(winners, collapse=", ")
+}
+```
+
+```{r}
+library(tigris)
+
+nc_counties <- counties(state = "NC", cb=T)
+
+```
+```{r}
+library(ggplot2)
+ggplot(nc_counties) +
+  geom_sf() +
+  theme_void() +
+  theme(panel.grid.major = element_line(color = "transparent")) +
+  labs(title="North Carolina Counties")
+```
+```{r}
+nc_counties$NAME <- toupper(nc_counties$NAME)
+
+nc_2016_pres_winners <- left_join(nc_counties, pivot16, by = c("NAME" = "county"))
+
+ggplot(nc_2016_pres_winners) +
+  geom_sf(aes(fill=Winner)) +
+  theme_void() +
+  theme(panel.grid.major = element_line(color = "transparent")) +
+  labs(title = "North Carolina Counties") +
+  scale_fill_manual(values = c("red", "blue", "green","black","purple","grey"))
+
+```
+
